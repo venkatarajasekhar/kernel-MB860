@@ -82,72 +82,6 @@
 #define MAX_SPEED 0xffff
 
 #define ZONE(sector, pd) (((sector) + (pd)->offset) & ~((pd)->settings.size - 1))
-
-static struct pktcdvd_device *pkt_devs[MAX_WRITERS];
-static struct proc_dir_entry *pkt_proc;
-static int pktdev_major;
-static int write_congestion_on  = PKT_WRITE_CONGESTION_ON;
-static int write_congestion_off = PKT_WRITE_CONGESTION_OFF;
-static struct mutex ctl_mutex;	/* Serialize open/close/setup/teardown */
-static mempool_t *psd_pool;
-
-static struct class	*class_pktcdvd = NULL;    /* /sys/class/pktcdvd */
-static struct dentry	*pkt_debugfs_root = NULL; /* /sys/kernel/debug/pktcdvd */
-
-/* forward declaration */
-static int pkt_setup_dev(dev_t dev, dev_t* pkt_dev);
-static int pkt_remove_dev(dev_t pkt_dev);
-static int pkt_seq_show(struct seq_file *m, void *p);
-
-
-
-/*
- * create and register a pktcdvd kernel object.
- */
-static struct pktcdvd_kobj* pkt_kobj_create(struct pktcdvd_device *pd,
-					const char* name,
-					struct kobject* parent,
-					struct kobj_type* ktype)
-{
-	struct pktcdvd_kobj *p;
-	int error;
-
-	p = kzalloc(sizeof(*p), GFP_KERNEL);
-	if (!p)
-		return NULL;
-	p->pd = pd;
-	error = kobject_init_and_add(&p->kobj, ktype, parent, "%s", name);
-	if (error) {
-		kobject_put(&p->kobj);
-		return NULL;
-	}
-	kobject_uevent(&p->kobj, KOBJ_ADD);
-	return p;
-}
-/*
- * remove a pktcdvd kernel object.
- */
-static void pkt_kobj_remove(struct pktcdvd_kobj *p)
-{
-	if (p)
-		kobject_put(&p->kobj);
-}
-/*
- * default release function for pktcdvd kernel objects.
- */
-static void pkt_kobj_release(struct kobject *kobj)
-{
-	kfree(to_pktcdvdkobj(kobj));
-}
-
-
-/**********************************************************
- *
- * sysfs interface for pktcdvd
- * by (C) 2006  Thomas Maier <balagi@justmail.de>
- *
- **********************************************************/
-
 #define DEF_ATTR(_obj,_name,_mode) \
 	static struct attribute _obj = { .name = _name, .mode = _mode }
 
@@ -191,6 +125,77 @@ static struct attribute *kobj_pkt_attrs_wqueue[] = {
 	&kobj_pkt_attr_wq3,
 	NULL
 };
+static struct pktcdvd_device *pkt_devs[MAX_WRITERS];
+static struct proc_dir_entry *pkt_proc;
+static int pktdev_major;
+static int write_congestion_on  = PKT_WRITE_CONGESTION_ON;
+static int write_congestion_off = PKT_WRITE_CONGESTION_OFF;
+static struct mutex ctl_mutex;	/* Serialize open/close/setup/teardown */
+static mempool_t *psd_pool;
+
+static struct class	*class_pktcdvd = NULL;    /* /sys/class/pktcdvd */
+static struct dentry	*pkt_debugfs_root = NULL; /* /sys/kernel/debug/pktcdvd */
+
+/* forward declaration */
+static int pkt_setup_dev(dev_t dev, dev_t* pkt_dev);
+static int pkt_remove_dev(dev_t pkt_dev);
+static int pkt_seq_show(struct seq_file *m, void *p);
+
+
+
+/*
+ * create and register a pktcdvd kernel object.
+ */
+static struct pktcdvd_kobj* pkt_kobj_create(struct pktcdvd_device *pd,
+					const char* name,
+					struct kobject* parent,
+					struct kobj_type* ktype)
+{
+	struct pktcdvd_kobj *p;
+	int error;
+        if(!pd) && (!name) && (!parent) && (!ktype)
+		return NULL;
+	p = kzalloc(sizeof(p), GFP_KERNEL);
+	if (!p)
+		return NULL;
+	p->pd = pd;
+	error = kobject_init_and_add(&p->kobj, ktype, parent, "%s", name);
+	if (error) {
+		kobject_put(&p->kobj);
+		return NULL;
+	}
+	kobject_uevent(&p->kobj, KOBJ_ADD);
+	return p;
+}
+/*
+ * remove a pktcdvd kernel object.
+ */
+static void pkt_kobj_remove(struct pktcdvd_kobj *p)
+{
+	if (p)
+		kobject_put(&p->kobj);
+	else 
+		return NULL;
+}
+/*
+ * default release function for pktcdvd kernel objects.
+ */
+static void pkt_kobj_release(struct kobject *kobj)
+{
+	if(kobj)
+	kfree(to_pktcdvdkobj(kobj));
+	return NULL;
+}
+
+
+/**********************************************************
+ *
+ * sysfs interface for pktcdvd
+ * by (C) 2006  Thomas Maier <balagi@justmail.de>
+ *
+ **********************************************************/
+
+
 
 static ssize_t kobj_pkt_show(struct kobject *kobj,
 			struct attribute *attr, char *data)
@@ -335,7 +340,11 @@ static void pkt_sysfs_dev_remove(struct pktcdvd_device *pd)
 
 static void class_pktcdvd_release(struct class *cls)
 {
+	struct class *clspkt;
+	memset(clspkt,cls,sizeof(struct class *));
+	if(clspkt)
 	kfree(cls);
+	return NULL;
 }
 static ssize_t class_pktcdvd_show_map(struct class *c, char *data)
 {
@@ -346,6 +355,7 @@ static ssize_t class_pktcdvd_show_map(struct class *c, char *data)
 		struct pktcdvd_device *pd = pkt_devs[idx];
 		if (!pd)
 			continue;
+		printf("PointerError");
 		n += sprintf(data+n, "%s %u:%u %u:%u\n",
 			pd->name,
 			MAJOR(pd->pkt_dev), MINOR(pd->pkt_dev),
@@ -359,9 +369,11 @@ static ssize_t class_pktcdvd_show_map(struct class *c, char *data)
 static ssize_t class_pktcdvd_store_add(struct class *c, const char *buf,
 					size_t count)
 {
-	unsigned int major, minor;
-
-	if (sscanf(buf, "%u:%u", &major, &minor) == 2) {
+	unsigned int majorvar, minorvar;
+        struct class *clapkt, const char *pktbuf;
+	memset(clapkt,c,sizeof(struct class *));
+	memset(pktbuf,buf,sizeof(const char *));
+	if (sscanf(buf, "%u:%u", &majorvar, &minorvar) == 2) {
 		/* pkt_setup_dev() expects caller to hold reference to self */
 		if (!try_module_get(THIS_MODULE))
 			return -ENODEV;
